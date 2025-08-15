@@ -12,9 +12,48 @@
 #include "MarkdownAssetEditorSettings.h"
 #include "MarkdownAssetEditorModule.h"
 #include "MarkdownBinding.h"
+#include "Misc/Paths.h"
+#include "HAL/FileManager.h"
+#include "Internationalization/Regex.h"
 
 #define LOCTEXT_NAMESPACE "SMarkdownAssetEditor"
 
+namespace
+{
+	static FString MarkdownToFileUrl(const FString& Path)
+	{
+		FString Abs = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*Path);
+		Abs.ReplaceInline(TEXT("\\"), TEXT("/"));
+		return FString::Printf(TEXT("<file:///%s>"), *Abs);
+	}
+
+	static void RewriteImageLinksRelativeTo(const FString& BaseDir, FString& InOutMarkdown)
+	{
+		// Handles simple patterns: ![alt](path) where path has no spaces and no nested parentheses
+		const FRegexPattern Pattern(TEXT("!\\[[^\\]]*\\]\\(([^)\\s]+)\\)"));
+		FRegexMatcher Matcher(Pattern, InOutMarkdown);
+
+		TArray<TPair<FString, FString>> Replacements;
+		while (Matcher.FindNext())
+		{
+			const FString Url = Matcher.GetCaptureGroup(1);
+			// Skip absolute URLs (scheme:)
+			if (Url.Contains(TEXT("://")))
+			{
+				continue;
+			}
+
+			const FString Resolved = FPaths::Combine(BaseDir, Url);
+			const FString FileUrl = MarkdownToFileUrl(Resolved);
+			Replacements.Add({ Url, FileUrl });
+		}
+
+		for (const auto& Pair : Replacements)
+		{
+			InOutMarkdown.ReplaceInline(*Pair.Key, *Pair.Value, ESearchCase::CaseSensitive);
+		}
+	}
+}
 
 //---------------------------------------------------------------------------------------------------------------------
 
@@ -74,15 +113,59 @@ void SMarkdownAssetEditor::Construct( const FArguments& InArgs, UMarkdownAsset* 
 							[
 								SAssignNew(LinkTextBox, SEditableTextBox)
 									.Text(FText::FromString(LinkAsset->URL))
-									.OnTextCommitted_Lambda([LinkAsset, Binding](const FText& Text, ETextCommit::Type CommitType) {
-									if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus) {
-										LinkAsset->URL = Text.ToString();
-								
-										LinkAsset->Text = FMarkdownAssetEditorModule::ReadTextFromFile(LinkAsset->URL);
-										Binding->SetText(LinkAsset->Text);
-									}
+									.OnTextCommitted_Lambda([this, LinkAsset, Binding](const FText& Text, ETextCommit::Type CommitType) {
+										if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus) {
+											LinkAsset->URL = Text.ToString();
+											// Read markdown content from the provided path/URL
+											LinkAsset->Text = FMarkdownAssetEditorModule::ReadTextFromFile(LinkAsset->URL);
+
+											// Preprocess image links to be absolute file URLs when relative
+											{
+												FString M = LinkAsset->Text.ToString();
+												RewriteImageLinksRelativeTo(FPaths::GetPath(LinkAsset->URL), M);
+												LinkAsset->Text = FText::FromString(M);
+											}
+
+											Binding->SetText(LinkAsset->Text);
+
+											// Inject a <base> href so relative image paths in the markdown resolve correctly
+											FString BaseHref;
+											const FString& UrlString = LinkAsset->URL;
+											if (UrlString.Contains(TEXT("://")))
+											{
+												int32 SlashIndex = INDEX_NONE;
+												if (UrlString.FindLastChar('/', SlashIndex))
+												{
+													BaseHref = UrlString.Left(SlashIndex + 1);
+												}
+											}
+											else
+											{
+												FString BaseDir = FPaths::GetPath(UrlString);
+												if (!BaseDir.IsEmpty())
+												{
+													FString Abs = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*BaseDir);
+													Abs.ReplaceInline(TEXT("\\"), TEXT("/"));
+													// Ensure trailing slash without using EndsWith to avoid analyzer confusion
+													if (Abs.Right(1) != TEXT("/"))
+													{
+														Abs += TEXT("/");
+													}
+													BaseHref = FString::Printf(TEXT("file:///%s"), *Abs);
+												}
+											}
+
+											if (WebBrowser.IsValid() && !BaseHref.IsEmpty())
+											{
+												const FString Script = FString::Printf(
+													TEXT("(function(){var b=document.querySelector('base'); if(!b){b=document.createElement('base'); document.head.appendChild(b);} b.href='%s'; console.log('Set base to', b.href);})();"),
+												*BaseHref
+												);
+												WebBrowser->ExecuteJavascript(Script);
+											}
+										}
 										})
-									.Font(FSlateFontInfo(InStyle->GetFontStyle("MarkdownAssetEditor.Font")))
+										.Font(FSlateFontInfo(InStyle->GetFontStyle("MarkdownAssetEditor.Font")))
 
 							]
 					]
@@ -136,7 +219,7 @@ void SMarkdownAssetEditor::HandleMarkdownAssetPropertyChanged( UObject* Object, 
 
 void SMarkdownAssetEditor::HandleConsoleMessage( const FString& Message, const FString& Source, int32 Line, EWebBrowserConsoleLogSeverity Serverity )
 {
-	//UE_LOG( LogTemp, Warning, TEXT( "Browser: %s" ), *Message );	
+	UE_LOG(LogTemp, Warning, TEXT("Markdown Browser: %s (Source: %s:%d)"), *Message, *Source, Line);
 }
 
 #undef LOCTEXT_NAMESPACE

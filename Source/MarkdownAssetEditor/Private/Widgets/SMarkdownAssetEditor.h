@@ -37,3 +37,5 @@ class SMarkdownAssetEditor : public SCompoundWidget
 		TSharedPtr<SEditableTextBox> LinkTextBox;
 		UMarkdownAsset* MarkdownAsset;
 };
+
+static FString ToFileUrl(const FString& Path);
