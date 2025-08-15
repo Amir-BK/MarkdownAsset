@@ -15,6 +15,7 @@
 #include "Misc/Paths.h"
 #include "HAL/FileManager.h"
 #include "Internationalization/Regex.h"
+#include "GenericPlatform/GenericPlatformHttp.h"
 
 #define LOCTEXT_NAMESPACE "SMarkdownAssetEditor"
 
@@ -24,7 +25,10 @@ namespace
 	{
 		FString Abs = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*Path);
 		Abs.ReplaceInline(TEXT("\\"), TEXT("/"));
-		return FString::Printf(TEXT("<file:///%s>"), *Abs);
+		//return FGenericPlatformHttp::UrlEncode(Abs);
+		//return FString::Printf(TEXT("file:///%s"), *Abs);
+		return FString::Printf(TEXT("<%s>"), *Abs);
+
 	}
 
 	static void RewriteImageLinksRelativeTo(const FString& BaseDir, FString& InOutMarkdown)
@@ -116,6 +120,7 @@ void SMarkdownAssetEditor::Construct( const FArguments& InArgs, UMarkdownAsset* 
 									.OnTextCommitted_Lambda([this, LinkAsset, Binding](const FText& Text, ETextCommit::Type CommitType) {
 										if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus) {
 											LinkAsset->URL = Text.ToString();
+											LinkAsset->MarkPackageDirty();
 											// Read markdown content from the provided path/URL
 											LinkAsset->Text = FMarkdownAssetEditorModule::ReadTextFromFile(LinkAsset->URL);
 

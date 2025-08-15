@@ -39,6 +39,7 @@ public class MarkdownAssetEditor : ModuleRules
             "DeveloperSettings",
             "ToolMenus",
             "AssetDefinition",
+            "HTTP",
         });
 
         PrivateIncludePathModuleNames.AddRange( new string[] {
