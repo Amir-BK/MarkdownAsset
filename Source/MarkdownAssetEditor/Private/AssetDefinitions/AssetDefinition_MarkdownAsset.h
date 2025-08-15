@@ -28,3 +28,13 @@ public:
 
 	virtual EAssetCommandResult OpenAssets(const FAssetOpenArgs& OpenArgs) const override;
 };
+
+UCLASS()
+class MARKDOWNASSETEDITOR_API UAssetDefinition_MarkdownLinkAsset : public UAssetDefinition_MarkdownAsset
+{
+	GENERATED_BODY()
+public:
+	virtual TSoftClassPtr<UObject> GetAssetClass() const override;
+
+	virtual FText GetAssetDisplayName() const override;
+};

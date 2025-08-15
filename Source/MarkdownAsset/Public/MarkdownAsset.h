@@ -19,3 +19,16 @@ public:
 	UPROPERTY( BlueprintReadOnly, EditAnywhere, Category = "MarkdownAsset" )
 	FText Text;
 };
+
+//this markdown asset asset is used to link to an external file or URL
+
+UCLASS(BlueprintType, hidecategories = ("Object", "MarkdownAsset"))
+class MARKDOWNASSET_API UMarkdownLinkAsset : public UMarkdownAsset
+{
+	GENERATED_BODY()
+
+public:
+
+	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category = "External")
+	FString URL; 
+};

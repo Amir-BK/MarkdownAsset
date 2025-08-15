@@ -10,6 +10,7 @@
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
 #include "Interfaces/IPluginManager.h"
 #include "MarkdownAssetEditorSettings.h"
+#include "MarkdownAssetEditorModule.h"
 #include "MarkdownBinding.h"
 
 #define LOCTEXT_NAMESPACE "SMarkdownAssetEditor"
@@ -57,15 +58,54 @@ void SMarkdownAssetEditor::Construct( const FArguments& InArgs, UMarkdownAsset* 
 	Binding->OnSetText.AddLambda( [this, Binding]() { MarkdownAsset->MarkPackageDirty(); MarkdownAsset->Text = Binding->GetText(); });
 	WebBrowser->BindUObject( TEXT( "MarkdownBinding" ), Binding, true );
 
-	ChildSlot
-	[
-		SNew( SVerticalBox )
-		+ SVerticalBox::Slot()
-		.FillHeight( 1.0f )
-		[
-			WebBrowser.ToSharedRef()
-		]
-	];
+	if (Cast<UMarkdownLinkAsset>(MarkdownAsset))
+	{
+		// if this is a link asset, we can bind the URL
+		UMarkdownLinkAsset* LinkAsset = Cast<UMarkdownLinkAsset>(MarkdownAsset);
+		ChildSlot
+			[
+				SNew(SVerticalBox)
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					[
+						SNew(SHorizontalBox)
+							+ SHorizontalBox::Slot()
+							.FillWidth(1.0f)
+							[
+								SAssignNew(LinkTextBox, SEditableTextBox)
+									.Text(FText::FromString(LinkAsset->URL))
+									.OnTextCommitted_Lambda([LinkAsset, Binding](const FText& Text, ETextCommit::Type CommitType) {
+									if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus) {
+										LinkAsset->URL = Text.ToString();
+								
+										LinkAsset->Text = FMarkdownAssetEditorModule::ReadTextFromFile(LinkAsset->URL);
+										Binding->SetText(LinkAsset->Text);
+									}
+										})
+									.Font(FSlateFontInfo(InStyle->GetFontStyle("MarkdownAssetEditor.Font")))
+
+							]
+					]
+					+ SVerticalBox::Slot()
+					.FillHeight(1.0f)
+					[
+						WebBrowser.ToSharedRef()
+					]
+			];
+	}
+	else {
+		ChildSlot
+			[
+				SNew(SVerticalBox)
+					+ SVerticalBox::Slot()
+					.FillHeight(1.0f)
+					[
+						WebBrowser.ToSharedRef()
+					]
+			];
+	}
+
+
 
 	FCoreUObjectDelegates::OnObjectPropertyChanged.AddSP( this, &SMarkdownAssetEditor::HandleMarkdownAssetPropertyChanged );
 }

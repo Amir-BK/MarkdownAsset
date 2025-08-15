@@ -34,5 +34,6 @@ class SMarkdownAssetEditor : public SCompoundWidget
 	private:
 
 		TSharedPtr<SWebBrowserView> WebBrowser;
+		TSharedPtr<SEditableTextBox> LinkTextBox;
 		UMarkdownAsset* MarkdownAsset;
 };

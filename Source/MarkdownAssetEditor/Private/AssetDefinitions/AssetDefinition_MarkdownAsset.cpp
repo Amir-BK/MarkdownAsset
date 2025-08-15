@@ -23,6 +23,8 @@ TSoftClassPtr<UObject> UAssetDefinition_MarkdownAsset::GetAssetClass() const
 
 FText UAssetDefinition_MarkdownAsset::GetAssetDisplayName() const
 {
+	
+	
 	return NSLOCTEXT("AssetTypeActions", "MarkdownAsset_AssetDefaultDisplayName", "Markdown Asset");
 }
 
@@ -122,6 +124,18 @@ namespace MenuExtension_MarkdownAsset
 			}));
 		}));
 	});
+}
+
+
+
+TSoftClassPtr<UObject> UAssetDefinition_MarkdownLinkAsset::GetAssetClass() const
+{
+	return UMarkdownLinkAsset::StaticClass();
+}
+
+FText UAssetDefinition_MarkdownLinkAsset::GetAssetDisplayName() const
+{
+	return NSLOCTEXT("AssetTypeActions", "MarkdownLinkAsset_AssetDefaultDisplayName", "Markdown Link Asset");
 }
 
 #undef LOCTEXT_NAMESPACE

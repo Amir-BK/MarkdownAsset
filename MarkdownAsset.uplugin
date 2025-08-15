@@ -10,7 +10,7 @@
 	"DocsURL": "https://github.com/gwaredd/MarkdownAsset",
 	"FabURL": "com.epicgames.launcher://ue/Fab/product/8a8121a7-a72a-4b55-bae4-943150e15fd9",
 	"SupportURL": "https://github.com/gwaredd/MarkdownAsset/issues",
-	"CanContainContent": false,
+	"CanContainContent": true,
 	"IsBetaVersion": false,
 	"IsExperimentalVersion": false,
 	"Installed": false,
@@ -42,5 +42,6 @@
 			"Name": "WebBrowserWidget",
 			"Enabled": true
 		}
-	]
+	],
+	"MarketplaceURL": ""
 }
