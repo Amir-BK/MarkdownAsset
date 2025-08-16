@@ -33,6 +33,9 @@ class SMarkdownAssetEditor : public SCompoundWidget
 		void HandleMarkdownAssetPropertyChanged( UObject* Object, FPropertyChangedEvent& PropertyChangedEvent );
 		void HandleConsoleMessage( const FString& Message, const FString& Source, int32 Line, EWebBrowserConsoleLogSeverity Serverity );
 		void OpenMarkdownAssetLink(UMarkdownLinkAsset& LinkAsset, UMarkdownBinding& Binding, const FString& Url);
+		
+		// Helper method for checking if current file is a local file
+		bool IsCurrentFileALocalFile() const;
 
 	private:
 

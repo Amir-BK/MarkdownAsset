@@ -6,8 +6,14 @@ A plugin for the Unreal game engine that adds Markdown as a new asset type.
 > * 5.3
 > * 5.4
 > * 5.5
+> * 5.6
 
-This allows you to create and manage documentation directly within the engine. This is particularly useful for personal projects and prototyping when you want to keep documentation with the project and close to hand.
+
+This allows you to create and manage documentation directly within the engine. This is particularly useful for personal projects and prototyping when you want to keep documentation with the project.
+
+## New Feature! Markdown Link Asset
+
+The markdown link asset can be linked to a file on disk (maybe a web URL in the future, but for now it seems we can't open links on github), the files can still be edited from the unreal markdown asset editor, this has some advantages, such as easier integration with version control. 
 
 ## How to install
 
@@ -23,7 +29,7 @@ This allows you to create and manage documentation directly within the engine. T
 * Right click in the content browser
 * `Documentation -> Markdown Asset`
 
-![New markdown asset context menu](./Docs/NewAsset.png)
+![New markdown asset context menu](<D:/UE Projects/GASP-ALS/Plugins/MarkdownAsset/Docs/NewAsset.png>)
 
 ### Edit an asset
 
@@ -31,7 +37,7 @@ This allows you to create and manage documentation directly within the engine. T
 * This will open the asset in the editor
 * You can switch between the editor and preview mode using the button in the top right
 
-![View markdown](./Docs/Editing.png)
+![View markdown](<D:/UE Projects/GASP-ALS/Plugins/MarkdownAsset/Docs/Editing.png>)
 
 ### Settings
 
@@ -44,18 +50,18 @@ The plugin uses the UAssetEditorSubsystem from the engine to open any asset from
 
 You can add links to your project assets, C++ file or even specific functions of a C++ class.
 
-![Unreal Engine Links](./Docs/LinksVariations.png)
+![Unreal Engine Links](<D:/UE Projects/GASP-ALS/Plugins/MarkdownAsset/Docs/LinksVariations.png>)
 
 ### How to link anything
 
 You can directly copy and paste a reference to any asset or C++ file from the editor
 
-![Copy asset reference](./Docs/AssetReference.png)
-![Copy script reference](./Docs/ScriptReference.png)
+![Copy asset reference](<D:/UE Projects/GASP-ALS/Plugins/MarkdownAsset/Docs/AssetReference.png>)
+![Copy script reference](<D:/UE Projects/GASP-ALS/Plugins/MarkdownAsset/Docs/ScriptReference.png>)
 
 Because Markdown files are assets too, you can reference them too! very useful to build one big index for your systems documentations
 
-![Copy reference](./Docs/MarkdownReference.png)
+![Copy reference](<D:/UE Projects/GASP-ALS/Plugins/MarkdownAsset/Docs/MarkdownReference.png>)
 
 You can specify a function in a class link by adding ".FunctionName" at the end, right before the last "'" character. When clicked, the default IDE will show the class at the specific function.
 
@@ -110,7 +116,7 @@ Are added like this:
 
 Which gives this:
 
-![Create task list](./Docs/TaskList.png)
+![Create task list](<D:/UE Projects/GASP-ALS/Plugins/MarkdownAsset/Docs/TaskList.png>)
 
 
 ### Anchors
@@ -153,7 +159,7 @@ You can add math equations with [MathJax](https://www.mathjax.org/) by wrapping 
 
 Gives ...
 
-![MathJax](./Docs/Math.png)
+![MathJax](<D:/UE Projects/GASP-ALS/Plugins/MarkdownAsset/Docs/Math.png>)
 
 
 ### Diagrams
@@ -175,7 +181,7 @@ For example:
 
 Which gives this:
 
-![GraphViz Diagrams](./Docs/Diagrams.png)
+![GraphViz Diagrams](<D:/UE Projects/GASP-ALS/Plugins/MarkdownAsset/Docs/Diagrams.png>)
 
 PlantUML and Dot diagrams work fine. Ditaa and Mermaid, not so much.
 

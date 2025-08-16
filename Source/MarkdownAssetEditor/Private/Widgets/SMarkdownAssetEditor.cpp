@@ -16,6 +16,10 @@
 #include "HAL/FileManager.h"
 #include "Internationalization/Regex.h"
 #include "GenericPlatform/GenericPlatformHttp.h"
+#include "Framework/Notifications/NotificationManager.h"
+#include "Widgets/Notifications/SNotificationList.h"
+#include "Styling/AppStyle.h"
+#include "LogChannels/MarkdownLogChannels.h"
 
 #define LOCTEXT_NAMESPACE "SMarkdownAssetEditor"
 
@@ -55,9 +59,6 @@ namespace
 			InOutMarkdown.ReplaceInline(*Pair.Key, *Pair.Value, ESearchCase::CaseSensitive);
 		}
 	}
-
-
-
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -99,14 +100,54 @@ void SMarkdownAssetEditor::Construct( const FArguments& InArgs, UMarkdownAsset* 
 	// setup binding
 	UMarkdownBinding* Binding = NewObject<UMarkdownBinding>();
 	Binding->Text = MarkdownAsset->Text;
-	Binding->OnSetText.AddLambda( [this, Binding]() { MarkdownAsset->MarkPackageDirty(); MarkdownAsset->Text = Binding->GetText(); });
+	
+	// Modified binding lambda to write back to disk for file-based markdown assets
+	Binding->OnSetText.AddLambda( [this, Binding]() { 
+		MarkdownAsset->MarkPackageDirty(); 
+		MarkdownAsset->Text = Binding->GetText(); 
+		
+		// If this is a link asset pointing to a local file, write back to disk
+		UMarkdownLinkAsset* LinkAsset = Cast<UMarkdownLinkAsset>(MarkdownAsset);
+		if (LinkAsset && IsCurrentFileALocalFile())
+		{
+			if (FMarkdownAssetEditorModule::CanWriteToFile(LinkAsset->URL))
+			{
+				if (FMarkdownAssetEditorModule::WriteTextToFile(LinkAsset->URL, Binding->GetText()))
+				{
+					UE_LOG(MarkdownStaticsLog, Log, TEXT("Successfully saved markdown file: %s"), *LinkAsset->URL);
+				}
+				else
+				{
+					UE_LOG(MarkdownStaticsLog, Warning, TEXT("Failed to save markdown file: %s"), *LinkAsset->URL);
+					
+					// Show user notification about save failure
+					FNotificationInfo Info(LOCTEXT("SaveFailedNotification", "Failed to save markdown file to disk"));
+					Info.ExpireDuration = 5.0f;
+					Info.bUseLargeFont = false;
+					Info.Image = FAppStyle::Get().GetBrush(TEXT("MessageLog.Warning"));
+					FSlateNotificationManager::Get().AddNotification(Info);
+				}
+			}
+			else
+			{
+				UE_LOG(MarkdownStaticsLog, Warning, TEXT("Cannot write to read-only file: %s"), *LinkAsset->URL);
+				
+				// Show user notification about read-only file
+				FNotificationInfo Info(LOCTEXT("ReadOnlyFileNotification", "Cannot save to read-only file"));
+				Info.ExpireDuration = 5.0f;
+				Info.bUseLargeFont = false;
+				Info.Image = FAppStyle::Get().GetBrush(TEXT("MessageLog.Warning"));
+				FSlateNotificationManager::Get().AddNotification(Info);
+			}
+		}
+	});
+	
 	WebBrowser->BindUObject( TEXT( "MarkdownBinding" ), Binding, true );
 
 	UMarkdownLinkAsset* LinkAsset = Cast<UMarkdownLinkAsset>(MarkdownAsset);
 	if (LinkAsset)
 	{
 		OpenMarkdownAssetLink(*LinkAsset, *Binding, LinkAsset->URL);
-		
 		
 		ChildSlot
 			[
@@ -121,12 +162,9 @@ void SMarkdownAssetEditor::Construct( const FArguments& InArgs, UMarkdownAsset* 
 								SAssignNew(LinkTextBox, SEditableTextBox)
 									.Text(FText::FromString(LinkAsset->URL))
 									.OnTextCommitted_Lambda([this, LinkAsset, Binding](const FText& Text, ETextCommit::Type CommitType) {
-										{
-											OpenMarkdownAssetLink(*LinkAsset, *Binding, Text.ToString());
-										}
-										})
-										.Font(FSlateFontInfo(InStyle->GetFontStyle("MarkdownAssetEditor.Font")))
-
+										OpenMarkdownAssetLink(*LinkAsset, *Binding, Text.ToString());
+									})
+									.Font(FSlateFontInfo(InStyle->GetFontStyle("MarkdownAssetEditor.Font")))
 							]
 					]
 					+ SVerticalBox::Slot()
@@ -147,8 +185,6 @@ void SMarkdownAssetEditor::Construct( const FArguments& InArgs, UMarkdownAsset* 
 					]
 			];
 	}
-
-
 
 	FCoreUObjectDelegates::OnObjectPropertyChanged.AddSP( this, &SMarkdownAssetEditor::HandleMarkdownAssetPropertyChanged );
 }
@@ -179,7 +215,18 @@ void SMarkdownAssetEditor::HandleMarkdownAssetPropertyChanged( UObject* Object, 
 
 void SMarkdownAssetEditor::HandleConsoleMessage( const FString& Message, const FString& Source, int32 Line, EWebBrowserConsoleLogSeverity Serverity )
 {
-	UE_LOG(LogTemp, Warning, TEXT("Markdown Browser: %s (Source: %s:%d)"), *Message, *Source, Line);
+	UE_LOG(MarkdownStaticsLog, Warning, TEXT("Markdown Browser: %s (Source: %s:%d)"), *Message, *Source, Line);
+}
+
+bool SMarkdownAssetEditor::IsCurrentFileALocalFile() const
+{
+	UMarkdownLinkAsset* LinkAsset = Cast<UMarkdownLinkAsset>(MarkdownAsset);
+	if (LinkAsset && !LinkAsset->URL.IsEmpty())
+	{
+		// Check if it's a URL (contains ://) or a local file path
+		return !LinkAsset->URL.Contains(TEXT("://"));
+	}
+	return false;
 }
 
 void SMarkdownAssetEditor::OpenMarkdownAssetLink(UMarkdownLinkAsset& LinkAsset, UMarkdownBinding& Binding, const FString& Url)
@@ -192,9 +239,6 @@ void SMarkdownAssetEditor::OpenMarkdownAssetLink(UMarkdownLinkAsset& LinkAsset, 
 	FString M = LinkAsset.Text.ToString();
 	RewriteImageLinksRelativeTo(FPaths::GetPath(LinkAsset.URL), M);
 	LinkAsset.Text = FText::FromString(M);
-
-
-
 
 	// Inject a <base> href so relative image paths in the markdown resolve correctly
 	FString BaseHref;
@@ -235,8 +279,7 @@ void SMarkdownAssetEditor::OpenMarkdownAssetLink(UMarkdownLinkAsset& LinkAsset, 
 	Binding.SetText(LinkAsset.Text);
 	WebBrowser->Reload();
 
-	UE_LOG(LogTemp, Log, TEXT("MarkdownAssetEditor: Opened link '%s' with text '%s'"), *LinkAsset.URL, *LinkAsset.Text.ToString());
-
+	UE_LOG(MarkdownStaticsLog, Log, TEXT("MarkdownAssetEditor: Opened link '%s' with text '%s'"), *LinkAsset.URL, *LinkAsset.Text.ToString());
 }
 
 #undef LOCTEXT_NAMESPACE
