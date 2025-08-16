@@ -11,6 +11,8 @@
 class FText;
 class ISlateStyle;
 class UMarkdownAsset;
+class UMarkdownLinkAsset;
+class UMarkdownBinding;
 
 class SMarkdownAssetEditor : public SCompoundWidget
 {
@@ -30,6 +32,7 @@ class SMarkdownAssetEditor : public SCompoundWidget
 
 		void HandleMarkdownAssetPropertyChanged( UObject* Object, FPropertyChangedEvent& PropertyChangedEvent );
 		void HandleConsoleMessage( const FString& Message, const FString& Source, int32 Line, EWebBrowserConsoleLogSeverity Serverity );
+		void OpenMarkdownAssetLink(UMarkdownLinkAsset& LinkAsset, UMarkdownBinding& Binding, const FString& Url);
 
 	private:
 

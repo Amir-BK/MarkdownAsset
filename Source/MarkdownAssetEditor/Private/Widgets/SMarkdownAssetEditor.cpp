@@ -25,8 +25,6 @@ namespace
 	{
 		FString Abs = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*Path);
 		Abs.ReplaceInline(TEXT("\\"), TEXT("/"));
-		//return FGenericPlatformHttp::UrlEncode(Abs);
-		//return FString::Printf(TEXT("file:///%s"), *Abs);
 		return FString::Printf(TEXT("<%s>"), *Abs);
 
 	}
@@ -57,6 +55,9 @@ namespace
 			InOutMarkdown.ReplaceInline(*Pair.Key, *Pair.Value, ESearchCase::CaseSensitive);
 		}
 	}
+
+
+
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -101,10 +102,12 @@ void SMarkdownAssetEditor::Construct( const FArguments& InArgs, UMarkdownAsset* 
 	Binding->OnSetText.AddLambda( [this, Binding]() { MarkdownAsset->MarkPackageDirty(); MarkdownAsset->Text = Binding->GetText(); });
 	WebBrowser->BindUObject( TEXT( "MarkdownBinding" ), Binding, true );
 
-	if (Cast<UMarkdownLinkAsset>(MarkdownAsset))
+	UMarkdownLinkAsset* LinkAsset = Cast<UMarkdownLinkAsset>(MarkdownAsset);
+	if (LinkAsset)
 	{
-		// if this is a link asset, we can bind the URL
-		UMarkdownLinkAsset* LinkAsset = Cast<UMarkdownLinkAsset>(MarkdownAsset);
+		OpenMarkdownAssetLink(*LinkAsset, *Binding, LinkAsset->URL);
+		
+		
 		ChildSlot
 			[
 				SNew(SVerticalBox)
@@ -118,56 +121,8 @@ void SMarkdownAssetEditor::Construct( const FArguments& InArgs, UMarkdownAsset* 
 								SAssignNew(LinkTextBox, SEditableTextBox)
 									.Text(FText::FromString(LinkAsset->URL))
 									.OnTextCommitted_Lambda([this, LinkAsset, Binding](const FText& Text, ETextCommit::Type CommitType) {
-										if (CommitType == ETextCommit::OnEnter || CommitType == ETextCommit::OnUserMovedFocus) {
-											LinkAsset->URL = Text.ToString();
-											LinkAsset->MarkPackageDirty();
-											// Read markdown content from the provided path/URL
-											LinkAsset->Text = FMarkdownAssetEditorModule::ReadTextFromFile(LinkAsset->URL);
-
-											// Preprocess image links to be absolute file URLs when relative
-											{
-												FString M = LinkAsset->Text.ToString();
-												RewriteImageLinksRelativeTo(FPaths::GetPath(LinkAsset->URL), M);
-												LinkAsset->Text = FText::FromString(M);
-											}
-
-											Binding->SetText(LinkAsset->Text);
-
-											// Inject a <base> href so relative image paths in the markdown resolve correctly
-											FString BaseHref;
-											const FString& UrlString = LinkAsset->URL;
-											if (UrlString.Contains(TEXT("://")))
-											{
-												int32 SlashIndex = INDEX_NONE;
-												if (UrlString.FindLastChar('/', SlashIndex))
-												{
-													BaseHref = UrlString.Left(SlashIndex + 1);
-												}
-											}
-											else
-											{
-												FString BaseDir = FPaths::GetPath(UrlString);
-												if (!BaseDir.IsEmpty())
-												{
-													FString Abs = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*BaseDir);
-													Abs.ReplaceInline(TEXT("\\"), TEXT("/"));
-													// Ensure trailing slash without using EndsWith to avoid analyzer confusion
-													if (Abs.Right(1) != TEXT("/"))
-													{
-														Abs += TEXT("/");
-													}
-													BaseHref = FString::Printf(TEXT("file:///%s"), *Abs);
-												}
-											}
-
-											if (WebBrowser.IsValid() && !BaseHref.IsEmpty())
-											{
-												const FString Script = FString::Printf(
-													TEXT("(function(){var b=document.querySelector('base'); if(!b){b=document.createElement('base'); document.head.appendChild(b);} b.href='%s'; console.log('Set base to', b.href);})();"),
-												*BaseHref
-												);
-												WebBrowser->ExecuteJavascript(Script);
-											}
+										{
+											OpenMarkdownAssetLink(*LinkAsset, *Binding, Text.ToString());
 										}
 										})
 										.Font(FSlateFontInfo(InStyle->GetFontStyle("MarkdownAssetEditor.Font")))
@@ -225,6 +180,63 @@ void SMarkdownAssetEditor::HandleMarkdownAssetPropertyChanged( UObject* Object, 
 void SMarkdownAssetEditor::HandleConsoleMessage( const FString& Message, const FString& Source, int32 Line, EWebBrowserConsoleLogSeverity Serverity )
 {
 	UE_LOG(LogTemp, Warning, TEXT("Markdown Browser: %s (Source: %s:%d)"), *Message, *Source, Line);
+}
+
+void SMarkdownAssetEditor::OpenMarkdownAssetLink(UMarkdownLinkAsset& LinkAsset, UMarkdownBinding& Binding, const FString& Url)
+{
+	LinkAsset.URL = Url;
+	LinkAsset.MarkPackageDirty();
+	// Read markdown content from the provided path/URL
+	LinkAsset.Text = FMarkdownAssetEditorModule::ReadTextFromFile(LinkAsset.URL);
+	// Preprocess image links to be absolute file URLs when relative
+	FString M = LinkAsset.Text.ToString();
+	RewriteImageLinksRelativeTo(FPaths::GetPath(LinkAsset.URL), M);
+	LinkAsset.Text = FText::FromString(M);
+
+
+
+
+	// Inject a <base> href so relative image paths in the markdown resolve correctly
+	FString BaseHref;
+	const FString& UrlString = LinkAsset.URL;
+	if (UrlString.Contains(TEXT("://")))
+	{
+		int32 SlashIndex = INDEX_NONE;
+		if (UrlString.FindLastChar('/', SlashIndex))
+		{
+			BaseHref = UrlString.Left(SlashIndex + 1);
+		}
+	}
+	else
+	{
+		FString BaseDir = FPaths::GetPath(UrlString);
+		if (!BaseDir.IsEmpty())
+		{
+			FString Abs = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*BaseDir);
+			Abs.ReplaceInline(TEXT("\\"), TEXT("/"));
+			// Ensure trailing slash without using EndsWith to avoid analyzer confusion
+			if (Abs.Right(1) != TEXT("/"))
+			{
+				Abs += TEXT("/");
+			}
+			BaseHref = FString::Printf(TEXT("file:///%s"), *Abs);
+		}
+	}
+
+	if (WebBrowser.IsValid() && !BaseHref.IsEmpty())
+	{
+		const FString Script = FString::Printf(
+			TEXT("(function(){var b=document.querySelector('base'); if(!b){b=document.createElement('base'); document.head.appendChild(b);} b.href='%s'; console.log('Set base to', b.href);})();"),
+			*BaseHref
+		);
+		WebBrowser->ExecuteJavascript(Script);
+	}
+
+	Binding.SetText(LinkAsset.Text);
+	WebBrowser->Reload();
+
+	UE_LOG(LogTemp, Log, TEXT("MarkdownAssetEditor: Opened link '%s' with text '%s'"), *LinkAsset.URL, *LinkAsset.Text.ToString());
+
 }
 
 #undef LOCTEXT_NAMESPACE
