@@ -25,40 +25,8 @@
 
 namespace
 {
-	static FString MarkdownToFileUrl(const FString& Path)
-	{
-		FString Abs = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*Path);
-		Abs.ReplaceInline(TEXT("\\"), TEXT("/"));
-		return FString::Printf(TEXT("<%s>"), *Abs);
-
-	}
-
-	static void RewriteImageLinksRelativeTo(const FString& BaseDir, FString& InOutMarkdown)
-	{
-		// Handles simple patterns: ![alt](path) where path has no spaces and no nested parentheses
-		const FRegexPattern Pattern(TEXT("!\\[[^\\]]*\\]\\(([^)\\s]+)\\)"));
-		FRegexMatcher Matcher(Pattern, InOutMarkdown);
-
-		TArray<TPair<FString, FString>> Replacements;
-		while (Matcher.FindNext())
-		{
-			const FString Url = Matcher.GetCaptureGroup(1);
-			// Skip absolute URLs (scheme:)
-			if (Url.Contains(TEXT("://")))
-			{
-				continue;
-			}
-
-			const FString Resolved = FPaths::Combine(BaseDir, Url);
-			const FString FileUrl = MarkdownToFileUrl(Resolved);
-			Replacements.Add({ Url, FileUrl });
-		}
-
-		for (const auto& Pair : Replacements)
-		{
-			InOutMarkdown.ReplaceInline(*Pair.Key, *Pair.Value, ESearchCase::CaseSensitive);
-		}
-	}
+	// Note: We've simplified the approach to always preserve original text in the editor
+	// and use HTML base href for image resolution instead of modifying the markdown content
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -95,6 +63,7 @@ void SMarkdownAssetEditor::Construct( const FArguments& InArgs, UMarkdownAsset* 
 		.InitialURL( URL )
 		.BackgroundColor( Settings->bDarkSkin ? FColor( 0.1f, 0.1f, 0.1f, 1.0f ) : FColor( 1.0f, 1.0f, 1.0f, 1.0f ) )
 		.OnConsoleMessage( this, &SMarkdownAssetEditor::HandleConsoleMessage )
+		.OnLoadCompleted( FSimpleDelegate::CreateSP( this, &SMarkdownAssetEditor::HandleBrowserLoadCompleted ) )
 	;
 
 	// setup binding
@@ -103,8 +72,12 @@ void SMarkdownAssetEditor::Construct( const FArguments& InArgs, UMarkdownAsset* 
 	
 	// Modified binding lambda to write back to disk for file-based markdown assets
 	Binding->OnSetText.AddLambda( [this, Binding]() { 
-		MarkdownAsset->MarkPackageDirty(); 
-		MarkdownAsset->Text = Binding->GetText(); 
+		// Get the edited text from the binding (this is always in the original format with relative paths)
+		FText EditedText = Binding->GetText();
+		
+		// Store the edited text in the asset
+		MarkdownAsset->MarkPackageDirty();
+		MarkdownAsset->Text = EditedText;
 		
 		// If this is a link asset pointing to a local file, write back to disk
 		UMarkdownLinkAsset* LinkAsset = Cast<UMarkdownLinkAsset>(MarkdownAsset);
@@ -112,9 +85,10 @@ void SMarkdownAssetEditor::Construct( const FArguments& InArgs, UMarkdownAsset* 
 		{
 			if (FMarkdownAssetEditorModule::CanWriteToFile(LinkAsset->URL))
 			{
-				if (FMarkdownAssetEditorModule::WriteTextToFile(LinkAsset->URL, Binding->GetText()))
+				// Save the text as-is (preserves relative paths)
+				if (FMarkdownAssetEditorModule::WriteTextToFile(LinkAsset->URL, EditedText))
 				{
-					UE_LOG(MarkdownStaticsLog, Log, TEXT("Successfully saved markdown file: %s"), *LinkAsset->URL);
+					UE_LOG(MarkdownStaticsLog, Log, TEXT("Successfully saved markdown file with relative paths preserved: %s"), *LinkAsset->URL);
 				}
 				else
 				{
@@ -229,20 +203,9 @@ bool SMarkdownAssetEditor::IsCurrentFileALocalFile() const
 	return false;
 }
 
-void SMarkdownAssetEditor::OpenMarkdownAssetLink(UMarkdownLinkAsset& LinkAsset, UMarkdownBinding& Binding, const FString& Url)
+FString SMarkdownAssetEditor::ComputeBaseHref(const FString& UrlString) const
 {
-	LinkAsset.URL = Url;
-	LinkAsset.MarkPackageDirty();
-	// Read markdown content from the provided path/URL
-	LinkAsset.Text = FMarkdownAssetEditorModule::ReadTextFromFile(LinkAsset.URL);
-	// Preprocess image links to be absolute file URLs when relative
-	FString M = LinkAsset.Text.ToString();
-	RewriteImageLinksRelativeTo(FPaths::GetPath(LinkAsset.URL), M);
-	LinkAsset.Text = FText::FromString(M);
-
-	// Inject a <base> href so relative image paths in the markdown resolve correctly
 	FString BaseHref;
-	const FString& UrlString = LinkAsset.URL;
 	if (UrlString.Contains(TEXT("://")))
 	{
 		int32 SlashIndex = INDEX_NONE;
@@ -258,7 +221,6 @@ void SMarkdownAssetEditor::OpenMarkdownAssetLink(UMarkdownLinkAsset& LinkAsset, 
 		{
 			FString Abs = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*BaseDir);
 			Abs.ReplaceInline(TEXT("\\"), TEXT("/"));
-			// Ensure trailing slash without using EndsWith to avoid analyzer confusion
 			if (Abs.Right(1) != TEXT("/"))
 			{
 				Abs += TEXT("/");
@@ -266,20 +228,57 @@ void SMarkdownAssetEditor::OpenMarkdownAssetLink(UMarkdownLinkAsset& LinkAsset, 
 			BaseHref = FString::Printf(TEXT("file:///%s"), *Abs);
 		}
 	}
+	return BaseHref;
+}
 
+void SMarkdownAssetEditor::HandleBrowserLoadCompleted()
+{
+	bBrowserTemplateLoaded = true;
+
+	// When the template (dark/light html) finishes loading, inject base tag if we currently have a link asset open
+	UMarkdownLinkAsset* LinkAsset = Cast<UMarkdownLinkAsset>(MarkdownAsset);
+	if (!LinkAsset) { return; }
+
+	const FString BaseHref = ComputeBaseHref(LinkAsset->URL);
 	if (WebBrowser.IsValid() && !BaseHref.IsEmpty())
 	{
 		const FString Script = FString::Printf(
-			TEXT("(function(){var b=document.querySelector('base'); if(!b){b=document.createElement('base'); document.head.appendChild(b);} b.href='%s'; console.log('Set base to', b.href);})();"),
+			TEXT("(function(){var head=document.head||document.getElementsByTagName('head')[0]; if(!head){return;} var b=document.querySelector('base'); if(!b){b=document.createElement('base'); head.appendChild(b);} b.href='%s'; console.log('Set base to', b.href); if(window.MarkdownBinding){ /* trigger a re-render if your html defines a function */ if(window.refreshMarkdown){refreshMarkdown();}}})();"),
 			*BaseHref
 		);
 		WebBrowser->ExecuteJavascript(Script);
 	}
+}
 
-	Binding.SetText(LinkAsset.Text);
-	WebBrowser->Reload();
+void SMarkdownAssetEditor::OpenMarkdownAssetLink(UMarkdownLinkAsset& LinkAsset, UMarkdownBinding& Binding, const FString& Url)
+{
+	LinkAsset.URL = Url;
+	LinkAsset.MarkPackageDirty();
+	
+	// Read the original markdown content from the file
+	FText OriginalText = FMarkdownAssetEditorModule::ReadTextFromFile(LinkAsset.URL);
+	LinkAsset.Text = OriginalText; // Store the original text in the asset (for saving)
+	
+	// IMPORTANT: Always set the binding to the original text with relative paths
+	// The user should always be editing the original format
+	Binding.SetText(OriginalText);
 
-	UE_LOG(MarkdownStaticsLog, Log, TEXT("MarkdownAssetEditor: Opened link '%s' with text '%s'"), *LinkAsset.URL, *LinkAsset.Text.ToString());
+	// Only attempt to inject base if browser template already loaded; otherwise the load-complete callback will do it
+	if (bBrowserTemplateLoaded)
+	{
+		const FString BaseHref = ComputeBaseHref(LinkAsset.URL);
+		if (WebBrowser.IsValid() && !BaseHref.IsEmpty())
+		{
+			const FString Script = FString::Printf(
+				TEXT("(function(){var head=document.head||document.getElementsByTagName('head')[0]; if(!head){return;} var b=document.querySelector('base'); if(!b){b=document.createElement('base'); head.appendChild(b);} b.href='%s'; console.log('Updated base to', b.href);})();"),
+				*BaseHref
+			);
+			WebBrowser->ExecuteJavascript(Script);
+		}
+	}
+
+	// Remove Reload call – it caused loss of injected base and timing issues
+	UE_LOG(MarkdownStaticsLog, Log, TEXT("MarkdownAssetEditor: Opened link '%s' (pending base injection=%s)"), *LinkAsset.URL, bBrowserTemplateLoaded ? TEXT("immediate") : TEXT("on load"));
 }
 
 #undef LOCTEXT_NAMESPACE

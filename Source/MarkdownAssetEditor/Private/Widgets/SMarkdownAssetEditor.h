@@ -33,6 +33,9 @@ class SMarkdownAssetEditor : public SCompoundWidget
 		void HandleMarkdownAssetPropertyChanged( UObject* Object, FPropertyChangedEvent& PropertyChangedEvent );
 		void HandleConsoleMessage( const FString& Message, const FString& Source, int32 Line, EWebBrowserConsoleLogSeverity Serverity );
 		void OpenMarkdownAssetLink(UMarkdownLinkAsset& LinkAsset, UMarkdownBinding& Binding, const FString& Url);
+		// Triggered after the browser finishes loading the template html (dark/light)
+		void HandleBrowserLoadCompleted();
+		FString ComputeBaseHref(const FString& InUrl) const;
 		
 		// Helper method for checking if current file is a local file
 		bool IsCurrentFileALocalFile() const;
@@ -42,6 +45,7 @@ class SMarkdownAssetEditor : public SCompoundWidget
 		TSharedPtr<SWebBrowserView> WebBrowser;
 		TSharedPtr<SEditableTextBox> LinkTextBox;
 		UMarkdownAsset* MarkdownAsset;
+		bool bBrowserTemplateLoaded = false;
 };
 
 static FString ToFileUrl(const FString& Path);
